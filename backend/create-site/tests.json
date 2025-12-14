@@ -1,0 +1,33 @@
+{
+  "tests": [
+    {
+      "name": "Create site successfully",
+      "method": "POST",
+      "body": {
+        "user_session": "test123",
+        "project_name": "Test Site",
+        "description": "Test description"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "project_id": "number",
+        "status": "ready",
+        "url": "string",
+        "message": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing required fields",
+      "method": "POST",
+      "body": {
+        "user_session": "test123"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

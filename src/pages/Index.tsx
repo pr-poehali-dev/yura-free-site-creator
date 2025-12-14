@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -7,6 +7,17 @@ import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
 
 const CORRECT_CODE = 'HDHSHSDUXUWJWJ';
+const API_CREATE = 'https://functions.poehali.dev/e81b56e5-9b64-4d38-afe3-038bee123ee4';
+const API_GET = 'https://functions.poehali.dev/c463d02e-f10b-4009-bcee-7283e52aae4d';
+
+interface Project {
+  id: number;
+  name: string;
+  description: string;
+  status: string;
+  url: string;
+  created_at?: string;
+}
 
 const Index = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -14,14 +25,33 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
   const [userInput, setUserInput] = useState('');
-  const [projects, setProjects] = useState([
-    { id: 1, name: 'Магазин игрушек', status: 'active', url: 'toyshop.site' },
-    { id: 2, name: 'Лендинг для психолога', status: 'draft', url: '' },
-  ]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [userSession, setUserSession] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadProjects();
+    }
+  }, [isAuthenticated]);
+
+  const loadProjects = async () => {
+    try {
+      const response = await fetch(`${API_GET}?user_session=${userSession}`);
+      const data = await response.json();
+      if (data.projects) {
+        setProjects(data.projects);
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    }
+  };
 
   const handleAuth = () => {
     if (code === CORRECT_CODE) {
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setUserSession(sessionId);
       setIsAuthenticated(true);
       toast({
         title: '🚀 Добро пожаловать!',
@@ -36,22 +66,101 @@ const Index = () => {
     }
   };
 
-  const handleSendMessage = () => {
-    if (!userInput.trim()) return;
+  const createSite = async (projectName: string, description: string) => {
+    setIsCreating(true);
+    try {
+      const response = await fetch(API_CREATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_session: userSession,
+          project_name: projectName,
+          description: description
+        })
+      });
 
-    setChatMessages([...chatMessages, { role: 'user', text: userInput }]);
-    
-    setTimeout(() => {
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: '✅ Сайт создан!',
+          description: `${projectName} готов к использованию`,
+        });
+        
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: `🎉 Готово! Ваш сайт "${projectName}" создан!\n\n📍 Ссылка: ${data.url}\n\nПерейдите в раздел "Мои сайты" чтобы увидеть его в списке.`
+          }
+        ]);
+
+        await loadProjects();
+        return data;
+      } else {
+        throw new Error(data.error || 'Ошибка создания сайта');
+      }
+    } catch (error) {
+      toast({
+        title: '❌ Ошибка',
+        description: error instanceof Error ? error.message : 'Не удалось создать сайт',
+        variant: 'destructive',
+      });
+      
       setChatMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          text: '🚀 Отлично! Я создам для вас сайт. Опишите подробнее, какие разделы и функции вам нужны?'
+          text: '😔 Извините, произошла ошибка. Попробуйте ещё раз или опишите проект по-другому.'
         }
       ]);
-    }, 1000);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
+  const handleSendMessage = async () => {
+    if (!userInput.trim() || isCreating) return;
+
+    const userMessage = userInput;
+    setChatMessages(prev => [...prev, { role: 'user', text: userMessage }]);
     setUserInput('');
+
+    setChatMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        text: '⚡ Создаю ваш сайт...'
+      }
+    ]);
+
+    const projectName = userMessage.length > 50 
+      ? userMessage.substring(0, 47) + '...'
+      : userMessage;
+
+    await createSite(projectName, userMessage);
+  };
+
+  const handleTemplateClick = async (templateName: string) => {
+    const descriptions: Record<string, string> = {
+      'Лендинг': 'Одностраничный сайт с героем, преимуществами, призывом к действию и контактами',
+      'Интернет-магазин': 'Каталог товаров с корзиной, оформлением заказа и личным кабинетом',
+      'Блог': 'Блог с лентой статей, категориями, поиском и комментариями',
+      'Портфолио': 'Портфолио с галереей работ, описанием услуг и формой связи',
+      'Визитка': 'Простая визитная карточка с информацией о компании и контактами',
+      'Квиз': 'Интерактивный квиз с вопросами, результатами и сбором лидов'
+    };
+
+    setActiveTab('constructor');
+    
+    setChatMessages([
+      {
+        role: 'assistant',
+        text: `📝 Создаю ${templateName.toLowerCase()} для вас...`
+      }
+    ]);
+
+    await createSite(templateName, descriptions[templateName] || templateName);
   };
 
   if (!isAuthenticated) {
@@ -131,8 +240,17 @@ const Index = () => {
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
               <Icon name="Bell" size={18} />
             </Button>
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              <Icon name="Settings" size={18} />
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setIsAuthenticated(false);
+                setProjects([]);
+                setChatMessages([]);
+              }}
+            >
+              <Icon name="LogOut" size={18} />
             </Button>
           </div>
         </div>
@@ -151,7 +269,7 @@ const Index = () => {
             </TabsTrigger>
             <TabsTrigger value="sites" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-secondary">
               <Icon name="FolderOpen" size={16} className="mr-2" />
-              Мои сайты
+              Мои сайты ({projects.length})
             </TabsTrigger>
             <TabsTrigger value="templates" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-secondary">
               <Icon name="Layout" size={16} className="mr-2" />
@@ -168,7 +286,7 @@ const Index = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-3xl font-bold mb-2">Создай сайт за минуты</h2>
-                  <p className="text-muted-foreground">Опиши идею — получи готовый сайт</p>
+                  <p className="text-muted-foreground">Опиши идею — получи готовый сайт с ссылкой</p>
                 </div>
                 <div className="hidden md:block">
                   <div className="w-32 h-32 bg-gradient-to-br from-accent to-secondary rounded-full animate-pulse opacity-20" />
@@ -178,9 +296,9 @@ const Index = () => {
 
             <div className="grid md:grid-cols-3 gap-6">
               {[
-                { icon: 'Zap', title: 'Мгновенно', desc: 'Сайт за 2-3 минуты' },
-                { icon: 'Sparkles', title: 'ИИ-ассистент', desc: 'Юра всё сделает сам' },
-                { icon: 'Globe', title: 'Публикация', desc: 'Сразу в интернет' },
+                { icon: 'Zap', title: 'Мгновенно', desc: 'Сайт создаётся за секунды' },
+                { icon: 'Sparkles', title: 'Без кода', desc: 'Просто опиши идею' },
+                { icon: 'Globe', title: 'Готовая ссылка', desc: 'Сразу доступен в интернете' },
               ].map((feature, i) => (
                 <Card key={i} className="p-6 bg-card/50 backdrop-blur-sm border-primary/20 hover:border-primary/50 transition-all hover:scale-105">
                   <div className="p-3 bg-gradient-to-br from-primary to-accent rounded-xl w-fit mb-4">
@@ -197,15 +315,15 @@ const Index = () => {
               <ol className="space-y-3 text-sm">
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">1</span>
-                  <span>Перейди в раздел "Конструктор"</span>
+                  <span>Перейди в "Конструктор" или выбери шаблон</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">2</span>
-                  <span>Опиши свой сайт простыми словами</span>
+                  <span>Опиши свой сайт (например: "Сайт для кофейни с меню")</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">3</span>
-                  <span>Получи готовый сайт с ссылкой</span>
+                  <span>Получи готовый сайт со ссылкой!</span>
                 </li>
               </ol>
             </Card>
@@ -226,12 +344,13 @@ const Index = () => {
                     <div className="text-center space-y-3">
                       <Icon name="MessageSquare" size={48} className="mx-auto opacity-30" />
                       <p>Опишите, какой сайт вы хотите создать</p>
+                      <p className="text-xs">Например: "Сайт для пиццерии с меню и доставкой"</p>
                     </div>
                   </div>
                 ) : (
                   chatMessages.map((msg, i) => (
                     <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[80%] p-4 rounded-2xl ${
+                      <div className={`max-w-[80%] p-4 rounded-2xl whitespace-pre-line ${
                         msg.role === 'user'
                           ? 'bg-gradient-to-r from-primary to-secondary text-white'
                           : 'bg-card border border-primary/20'
@@ -248,14 +367,16 @@ const Index = () => {
                   placeholder="Например: Сделай сайт для кофейни с меню и контактами"
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  onKeyDown={(e) => e.key === 'Enter' && !isCreating && handleSendMessage()}
+                  disabled={isCreating}
                   className="bg-background/50 border-primary/30"
                 />
                 <Button
                   onClick={handleSendMessage}
+                  disabled={isCreating}
                   className="bg-gradient-to-r from-primary to-secondary hover:opacity-90"
                 >
-                  <Icon name="Send" size={18} />
+                  {isCreating ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Send" size={18} />}
                 </Button>
               </div>
             </Card>
@@ -263,50 +384,72 @@ const Index = () => {
 
           <TabsContent value="sites" className="animate-fade-in">
             <div className="space-y-4">
-              {projects.map((project) => (
-                <Card key={project.id} className="p-6 bg-card/50 backdrop-blur-sm border-primary/20 hover:border-primary/50 transition-all">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-gradient-to-br from-primary to-accent rounded-xl">
-                        <Icon name="Globe" size={24} className="text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">{project.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {project.status === 'active' ? `🟢 ${project.url}` : '🟡 Черновик'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="border-primary/30">
-                        <Icon name="Edit" size={16} className="mr-2" />
-                        Редактировать
-                      </Button>
-                      <Button variant="outline" size="sm" className="border-primary/30">
-                        <Icon name="ExternalLink" size={16} />
-                      </Button>
-                    </div>
-                  </div>
+              {projects.length === 0 ? (
+                <Card className="p-12 bg-card/50 backdrop-blur-sm border-primary/20 text-center">
+                  <Icon name="Inbox" size={64} className="mx-auto mb-4 opacity-30" />
+                  <h3 className="text-xl font-semibold mb-2">Пока нет проектов</h3>
+                  <p className="text-muted-foreground mb-6">Создайте свой первый сайт в конструкторе</p>
+                  <Button 
+                    onClick={() => setActiveTab('constructor')}
+                    className="bg-gradient-to-r from-primary to-secondary"
+                  >
+                    <Icon name="Plus" size={18} className="mr-2" />
+                    Создать сайт
+                  </Button>
                 </Card>
-              ))}
+              ) : (
+                projects.map((project) => (
+                  <Card key={project.id} className="p-6 bg-card/50 backdrop-blur-sm border-primary/20 hover:border-primary/50 transition-all">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-gradient-to-br from-primary to-accent rounded-xl">
+                          <Icon name="Globe" size={24} className="text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-lg">{project.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {project.status === 'ready' ? `🟢 ${project.url}` : '🟡 Создаётся...'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="border-primary/30"
+                          onClick={() => window.open(project.url, '_blank')}
+                        >
+                          <Icon name="ExternalLink" size={16} className="mr-2" />
+                          Открыть
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="templates" className="animate-fade-in">
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
-                { name: 'Лендинг', icon: 'FileText' },
-                { name: 'Интернет-магазин', icon: 'ShoppingCart' },
-                { name: 'Блог', icon: 'BookOpen' },
-                { name: 'Портфолио', icon: 'Briefcase' },
-                { name: 'Визитка', icon: 'CreditCard' },
-                { name: 'Квиз', icon: 'HelpCircle' },
+                { name: 'Лендинг', icon: 'FileText', desc: 'Одностраничный сайт' },
+                { name: 'Интернет-магазин', icon: 'ShoppingCart', desc: 'Каталог с корзиной' },
+                { name: 'Блог', icon: 'BookOpen', desc: 'Статьи и новости' },
+                { name: 'Портфолио', icon: 'Briefcase', desc: 'Галерея работ' },
+                { name: 'Визитка', icon: 'CreditCard', desc: 'Информация о компании' },
+                { name: 'Квиз', icon: 'HelpCircle', desc: 'Интерактивный опрос' },
               ].map((template, i) => (
-                <Card key={i} className="p-6 bg-card/50 backdrop-blur-sm border-primary/20 hover:border-primary/50 transition-all hover:scale-105 cursor-pointer">
+                <Card 
+                  key={i} 
+                  className="p-6 bg-card/50 backdrop-blur-sm border-primary/20 hover:border-primary/50 transition-all hover:scale-105 cursor-pointer"
+                  onClick={() => handleTemplateClick(template.name)}
+                >
                   <div className="p-4 bg-gradient-to-br from-primary to-secondary rounded-xl w-fit mb-4">
                     <Icon name={template.icon as any} size={32} className="text-white" />
                   </div>
-                  <h3 className="font-semibold text-lg">{template.name}</h3>
+                  <h3 className="font-semibold text-lg mb-1">{template.name}</h3>
+                  <p className="text-sm text-muted-foreground">{template.desc}</p>
                 </Card>
               ))}
             </div>
@@ -317,15 +460,20 @@ const Index = () => {
               <h2 className="text-2xl font-bold mb-6">📚 Документация</h2>
               <div className="space-y-4">
                 {[
-                  { title: 'Как создать первый сайт', icon: 'Rocket' },
-                  { title: 'Работа с конструктором', icon: 'Wand2' },
-                  { title: 'Публикация и домены', icon: 'Globe' },
-                  { title: 'Интеграции и API', icon: 'Plug' },
+                  { title: 'Как создать первый сайт', icon: 'Rocket', desc: 'Пошаговая инструкция для начинающих' },
+                  { title: 'Работа с конструктором', icon: 'Wand2', desc: 'Как правильно описывать проект' },
+                  { title: 'Шаблоны сайтов', icon: 'Layout', desc: 'Готовые решения для быстрого старта' },
+                  { title: 'Публикация сайта', icon: 'Globe', desc: 'Как получить и использовать ссылку' },
                 ].map((doc, i) => (
-                  <div key={i} className="flex items-center gap-3 p-4 bg-background/30 rounded-xl hover:bg-background/50 transition-all cursor-pointer">
-                    <Icon name={doc.icon as any} size={20} className="text-primary" />
-                    <span>{doc.title}</span>
-                    <Icon name="ChevronRight" size={16} className="ml-auto text-muted-foreground" />
+                  <div key={i} className="p-4 bg-background/30 rounded-xl hover:bg-background/50 transition-all">
+                    <div className="flex items-start gap-3">
+                      <Icon name={doc.icon as any} size={20} className="text-primary mt-1" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold mb-1">{doc.title}</h3>
+                        <p className="text-sm text-muted-foreground">{doc.desc}</p>
+                      </div>
+                      <Icon name="ChevronRight" size={16} className="text-muted-foreground mt-1" />
+                    </div>
                   </div>
                 ))}
               </div>

@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "Get projects successfully",
+      "method": "GET",
+      "path": "/?user_session=test123",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "projects": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing user_session",
+      "method": "GET",
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
